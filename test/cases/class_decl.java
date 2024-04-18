@@ -11,6 +11,11 @@ public class class_decl extends abc implements c,d,e,f permits a,b,c
 
         a = fadf[2] + e + f;
 
+        int [] pfs = new int[3];
+        int [] nso = {1,2,3};
+
+        c = "asdf";
+
         f.o.e = a + 4 +5;
     }
 
