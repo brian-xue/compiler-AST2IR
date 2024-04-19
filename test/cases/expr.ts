@@ -1,4 +1,5 @@
-a = 4 ;
-// b = new Array(4) ;
-c = [1, 2, 3, 4] ;
-d = "joang" ;
+b = new Array(4) ;
+b[2] = 3 ;
+a = b[2] ;
+c = 3;
+c = b[2]! ;

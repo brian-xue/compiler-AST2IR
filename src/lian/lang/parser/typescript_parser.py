@@ -44,7 +44,11 @@ class Parser(common_parser.Parser):
     def check_expression_handler(self, node):
         EXPRESSION_HANDLER_MAP = {
             "assignment_expression": self.assignment_expression,
+            "assignment_pattern": self.assignment_expression,  # "assignment_pattern" is a special case of "assignment_expression
+            "pattern": self.pattern,
+            "rest_pattern": self.pattern,  
             "binary_expression": self.binary_expression,
+            "subscript_expression": self.parse_subscript,
             "call_expression": self.call_expression,
             "unary_expression": self.unary_expression,
             "member_expression": self.member_expression,
@@ -52,6 +56,7 @@ class Parser(common_parser.Parser):
             "new_expression": self.new_instance,
             "yield_expression": self.yield_expression,
             "augmented_assignment_expression": self.augmented_assignment_expression,
+            "non_null_expressopn": self.non_null_expression,
             "array": self.array,
             "parenthesized_expression": self.parenthesized_expression,
         }
@@ -91,15 +96,22 @@ class Parser(common_parser.Parser):
         ret = self.handle_hex_string(ret)
         return self.handle_hex_string(ret)
 
-    def parse_subscript(self,node,statements):
-        obj = self.parse(self.find_child_by_field(node, "object"), statements)
-        optional_chain = self.find_child_by_field(node, "optional_chain")
-        index = self.parse(self.find_child_by_field(node, "index"), statements)
-        if optional_chain:
-            return obj,optional_chain,index
-        return obj,index
+    def parse_subscript(self,node,statements,flag = 0):
+        if flag == 1: # for write
+            obj = self.parse(self.find_child_by_field(node, "object"), statements)
+            optional_chain = self.find_child_by_field(node, "optional_chain")
+            index = self.parse(self.find_child_by_field(node, "index"), statements)
+            return obj,index
+        else:
+            obj = self.parse(self.find_child_by_field(node, "object"), statements)
+            optional_chain = self.find_child_by_field(node, "optional_chain")
+            index = self.parse(self.find_child_by_field(node, "index"), statements)
+            tmp_var = self.tmp_variable(statements)
+            statements.append({"array_read": {"target": tmp_var, "array": obj, "index": index}})
+            return tmp_var
 
-
+    def non_null_expression(self, node, statements):
+        self.parse(node.named_children[0], statements)
 
     def assignment_expression(self, node, statements):
         left = self.find_child_by_field(node, "left")
@@ -107,37 +119,106 @@ class Parser(common_parser.Parser):
         shadow_right = self.parse(right, statements)
 
         if left.type == "parenthesized_expression":
-            pass
+            shadow_left = self.parse(left, statements)
+            statements.append({"assign_stmt": {"target": shadow_left, "operand": shadow_right}})
 
         if left.type == "array_pattern":
-            pass
+            shadow_left_list = self.parse_array_pattern(left, statements)
+            for i in range(len(shadow_left_list)):
+                shadow_left = shadow_left_list[i]
+                if right.type == "array" and i < right.named_child_count:
+                    tmp_var = self.tmp_variable(statements)
+                    statements.append({"array_read": {"target": tmp_var, "array": shadow_right, "index": i}})
+                    statements.append({"assign_stmt": {"target": shadow_left, "operand": tmp_var}})
+
+            return shadow_left_list
+
 
         if left.type == "object_pattern":
             pass
 
         if left.type == "subscript_expression":
-            shadow_array,shadow_index = self.parse_subscript(left, statements)
+            shadow_array,shadow_index = self.parse_subscript(left, statements,1)
             statements.append({"array_write": {"array": shadow_array, "index": shadow_index, "source": shadow_right}})
             return shadow_right
 
         shadow_left = self.read_node_text(left)
         statements.append({"assign_stmt":{"target": shadow_left, "operand": shadow_right}})
+        return shadow_left
+
+
+    def parse_array_pattern(self, node, statements):
+        elements = node.named_children
+        num_elements = len(elements)
+        shadow_left_list = []
+        for i in range(num_elements):
+            element = elements[i]
+            if self.is_comment(element):
+                continue
+            shadow_element = self.parse(element, statements)
+            shadow_left_list.append(shadow_element)
+        return shadow_left_list
+
+    def pattern(self, node, statements):
+        return self.parse(self.node.named_children[0], statements)
 
 
     def binary_expression(self, node, statements):
-        pass
+        operator = self.find_child_by_field(node, "operator")
+        shadow_operator = self.read_node_text(operator)
+        right = self.find_child_by_field(node, "right")
+        shadow_right = self.parse(right, statements)
+        left = self.find_child_by_field(node, "left")
+
+        if shadow_operator == "in" and left.type == "private_property_identifier":
+            shadow_left = self.parse_private_property_identifier(left, statements)
+        else:
+            shadow_left = self.parse(left, statements)
+
+        tmp_var = self.tmp_variable(statements)
+        statements.append({"assign_stmt": {"target": tmp_var, "operator": shadow_operator, "operand": shadow_left,
+                                        "operand2": shadow_right}})
+        return tmp_var
+
+    def parse_private_property_identifier(self, node, statements):
+            return self.read_node_text(node)
 
     def call_expression(self, node, statements):
         pass
 
     def unary_expression(self, node, statements):
-        pass
+        operator = self.find_child_by_field(node, "operator")
+        shadow_operator = self.read_node_text(operator)
+        argument = self.find_child_by_field(node, "argument")
+        shadow_argument = self.parse(argument, statements)
+
+        tmp_var = self.tmp_variable(statements)
+
+        statements.append({"assign_stmt": {"target": tmp_var, "operator": shadow_operator, "operand": shadow_argument}})
+        return tmp_var
 
     def member_expression(self, node, statements):
         pass
 
     def ternary_expression(self, node, statements):
-        pass
+        condition = self.find_child_by_field(node, "condition")
+        consequence = self.find_child_by_field(node, "consequence")
+        alternative = self.find_child_by_field(node, "alternative")
+
+        condition = self.parse(condition, statements)
+
+        body = []
+        elsebody = []
+        tmp_var = self.tmp_variable(statements)
+
+        expr1 = self.parse(consequence, body)
+        body.append({"assign_stmt": {"target": tmp_var, "operand": expr1}})
+
+        expr2 = self.parse(alternative, elsebody)
+        body.append({"assign_stmt": {"target": tmp_var, "operand": expr2}})
+
+        statements.append({"if": {"condition": condition, "body": body, "elsebody": elsebody}})
+        return tmp_var
 
     def new_instance(self, node, statements):
         glang_node = {}
@@ -187,14 +268,11 @@ class Parser(common_parser.Parser):
             statements.append({"array_write": {"array": shadow_array, "index": shadow_index, "source": tmp_var2}})
             return tmp_var2
 
-        if left.type == "array_pattern":
-            pass
-
-        if left.type == "object_pattern":
-            pass
-
         if left.type == "parenthesized_expression":
-            pass
+            shadow_left = self.parse(left, statements)
+            statements.append({"assign_stmt": {"target": shadow_left, "operator": shadow_operator,
+                                               "operand": shadow_left, "operand2": shadow_right}})
+            return shadow_left
 
         shadow_left = self.read_node_text(left)
         statements.append({"assign_stmt": {"target": shadow_left, "operator": shadow_operator,
@@ -215,8 +293,12 @@ class Parser(common_parser.Parser):
         return tmp_var
 
     def parenthesized_expression(self, node, statements):
-        expression = self.find_child_by_field(node, "expression")
-        return self.parse(expression, statements)
+        sub_expressions = node.named_children
+        if sub_expressions[0].type == "sequence_expression":
+            return self.parse_sequence_expression(sub_expressions[0], statements)
+        else:
+            statements.append({"parenthesized_expression": self.parse(sub_expressions[0])})
+            return self.parse(sub_expressions[0], statements)
 
 
     def regular_literal(self, node, statements, replacement):
@@ -226,3 +308,10 @@ class Parser(common_parser.Parser):
         value = self.read_node_text(node)
         value = self.common_eval(value)
         return str(value)
+
+    def parse_sequence_expression(self, node, statements):
+        sub_expressions = node.named_children
+        for sub_expression in sub_expressions:
+            if self.is_comment(sub_expression):
+                continue
+            self.parse(sub_expression, statements)
