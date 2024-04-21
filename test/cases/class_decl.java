@@ -15,6 +15,7 @@ public class class_decl extends abc implements c,d,e,f permits a,b,c
         int [] nso = {1,2,3};
 
         c = "asdf";
+        d = "ans\\{c}";
 
         f.o.e = a + 4 +5;
     }

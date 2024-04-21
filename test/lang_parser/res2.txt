@@ -12,7 +12,13 @@ Lang-Parser: /app/experiment_2/test/cases/expr.ts
  {'assign_stmt': {'target': 'a', 'operand': '%v1'}},
  {'assign_stmt': {'target': 'c', 'operand': '3'}},
  {'array_read': {'target': '%v2', 'array': 'b', 'index': '2'}},
- {'assign_stmt': {'target': 'c', 'operand': '%v2'}}]
+ {'assign_stmt': {'target': 'c', 'operand': '%v2'}},
+ {'array_read': {'target': '%v3', 'array': 'b', 'index': '2'}},
+ {'assign_stmt': {'target': '%v4',
+                  'operator': '+',
+                  'operand': '%v3',
+                  'operand2': '3'}},
+ {'array_write': {'array': 'b', 'index': '2', 'source': '%v4'}}]
 [{'operation': 'new_instance',
   'stmt_id': 1,
   'data_type': 'Array',
@@ -36,6 +42,22 @@ Lang-Parser: /app/experiment_2/test/cases/expr.ts
   'target': '%v2',
   'array': 'b',
   'index': '2'},
- {'operation': 'assign_stmt', 'stmt_id': 8, 'target': 'c', 'operand': '%v2'}]
+ {'operation': 'assign_stmt', 'stmt_id': 8, 'target': 'c', 'operand': '%v2'},
+ {'operation': 'array_read',
+  'stmt_id': 9,
+  'target': '%v3',
+  'array': 'b',
+  'index': '2'},
+ {'operation': 'assign_stmt',
+  'stmt_id': 10,
+  'target': '%v4',
+  'operator': '+',
+  'operand': '%v3',
+  'operand2': '3'},
+ {'operation': 'array_write',
+  'stmt_id': 11,
+  'array': 'b',
+  'index': '2',
+  'source': '%v4'}]
 Lang-Parser-Output: /app/experiment_2/test/lang_parser/output/expr.ts.glang
 /app/experiment_2/src/lian/lang/main.py --lang=typescript -debug -print_statements /app/experiment_2/test/cases/expr.ts
