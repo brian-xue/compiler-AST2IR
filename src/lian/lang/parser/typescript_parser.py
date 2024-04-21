@@ -58,7 +58,7 @@ class Parser(common_parser.Parser):
             "unary_expression": self.unary_expression,
             "member_expression": self.member_expression,
             "ternary_expression": self.ternary_expression,
-            "new_expression": self.new_instance,
+            "new_expression": self.new_expression,
             "yield_expression": self.yield_expression,
             "augmented_assignment_expression": self.augmented_assignment_expression,
             "non_null_expressopn": self.non_null_expression,
@@ -110,7 +110,7 @@ class Parser(common_parser.Parser):
     def string_substitution(self, node, statements, replacement):
         expr = node.named_children[0]
         shadow_expr = self.parse(expr, statements)
-        replacement.append((expr, shadow_expr))
+        replacement.append((node, shadow_expr))
         return shadow_expr
 
     def this_literal(self, node, statements, replacement):
@@ -143,7 +143,16 @@ class Parser(common_parser.Parser):
 
         if left.type == "parenthesized_expression":
             shadow_left = self.parse(left, statements)
-            statements.append({"assign_stmt": {"target": shadow_left, "operand": shadow_right}})
+            if type(shadow_left) == list:
+                child_count = len(shadow_left)
+                for i in range(child_count):
+                    tmp_var = self.tmp_variable(statements)
+                    statements.append({"array_read": {"target": tmp_var, "array": shadow_right, "index": i}})
+                    statements.append({"assign_stmt": {"target": shadow_left[i], "operand": tmp_var}})
+                return shadow_left
+            else:
+                statements.append({"assign_stmt": {"target": shadow_left, "operand": shadow_right}})
+                return shadow_left
 
         if left.type == "array_pattern":
             shadow_left_list = self.parse_array_pattern(left, statements)
@@ -156,9 +165,6 @@ class Parser(common_parser.Parser):
 
             return shadow_left_list
 
-
-        if left.type == "object_pattern":
-            pass
 
         if left.type == "subscript_expression":
             shadow_array,shadow_index = self.parse_subscript(left, statements,1)
@@ -280,30 +286,34 @@ class Parser(common_parser.Parser):
         statements.append({"if": {"condition": condition, "body": body, "elsebody": elsebody}})
         return tmp_var
 
-    def new_instance(self, node, statements):
+    def new_expression(self, node, statements):
         glang_node = {}
         constructor = self.find_child_by_field(node, "constructor")
-        glang_node["data_type"] = self.read_node_text(constructor)
+        if constructor.type == "array":
+            return self.array(constructor, statements)
 
-        type_parameters = self.find_child_by_field(node, "type_arguments")
-        if type_parameters:
-            glang_node["type_parameters"] = self.read_node_text(type_parameters)[1:-1]
+        else:
+            glang_node["data_type"] = self.read_node_text(constructor)
 
-        arguments = self.find_child_by_field(node, "arguments")
-        argument_list = []
-        if arguments.named_child_count > 0:
-            for arg in arguments.named_children:
-                if self.is_comment(arg):
-                    continue
-                shadow_arg = self.parse(arg, statements)
-                if shadow_arg:
-                    argument_list.append(shadow_arg)
+            type_parameters = self.find_child_by_field(node, "type_arguments")
+            if type_parameters:
+                glang_node["type_parameters"] = self.read_node_text(type_parameters)[1:-1]
 
-        glang_node["args"] = argument_list
-        tmp_var = self.tmp_variable(statements)
-        glang_node["target"] = tmp_var
-        statements.append({"new_instance": glang_node})
-        return tmp_var
+            arguments = self.find_child_by_field(node, "arguments")
+            argument_list = []
+            if arguments.named_child_count > 0:
+                for arg in arguments.named_children:
+                    if self.is_comment(arg):
+                        continue
+                    shadow_arg = self.parse(arg, statements)
+                    if shadow_arg:
+                        argument_list.append(shadow_arg)
+
+            glang_node["args"] = argument_list
+            tmp_var = self.tmp_variable(statements)
+            glang_node["target"] = tmp_var
+            statements.append({"new_instance": glang_node})
+            return tmp_var
 
     def yield_expression(self, node, statements):
         shadow_expr = ""
@@ -336,9 +346,19 @@ class Parser(common_parser.Parser):
 
         if left.type == "parenthesized_expression":
             shadow_left = self.parse(left, statements)
-            statements.append({"assign_stmt": {"target": shadow_left, "operator": shadow_operator,
+            if type(shadow_left) == list:
+                child_count = len(shadow_left)
+                for i in range(child_count):
+                    tmp_var = self.tmp_variable(statements)
+                    statements.append({"array_read": {"target": tmp_var, "array": shadow_right,"index": i}})
+                    statements.append({"assign_stmt": {"target": shadow_left[i], "operator": shadow_operator,
+                                                         "operand": tmp_var, "operand2": shadow_left[i]}})
+                    return shadow_left
+            
+            else:
+                statements.append({"assign_stmt": {"target": shadow_left, "operator": shadow_operator,
                                                "operand": shadow_left, "operand2": shadow_right}})
-            return shadow_left
+                return shadow_left
 
         if left.type == "member_expression":
             shadow_receiver_obj, shadow_field = self.member_expression(left, statements,1)
@@ -362,7 +382,7 @@ class Parser(common_parser.Parser):
         data_type = set()
         elements = node.named_children
         for element in elements:
-            data_type.add(elemet.type)
+            data_type.add(element.type)
         data_type = list(data_type)
         statements.append({"new_array": {"target": tmp_var, "data_type": data_type}})
         num_elements = len(elements)
@@ -379,7 +399,6 @@ class Parser(common_parser.Parser):
         if sub_expressions[0].type == "sequence_expression":
             return self.parse_sequence_expression(sub_expressions[0], statements)
         else:
-            statements.append({"parenthesized_expression": self.parse(sub_expressions[0])})
             return self.parse(sub_expressions[0], statements)
 
 
@@ -393,10 +412,12 @@ class Parser(common_parser.Parser):
 
     def parse_sequence_expression(self, node, statements):
         sub_expressions = node.named_children
+        sequence_list = []
         for sub_expression in sub_expressions:
             if self.is_comment(sub_expression):
                 continue
-            self.parse(sub_expression, statements)
+            sequence_list.append(self.parse(sub_expression, statements))
+        return sequence_list
 
     def await_expression(self, node, statements):
         expr = node.named_children[0]
