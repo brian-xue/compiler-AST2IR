@@ -71,6 +71,11 @@ class Parser(common_parser.Parser):
             "type_assertion": self.type_assertion,
             "update_expression": self.update_expression,
             "object_assignment_pattern": self.assignment_expression,
+            "pair_pattern": self.parse_pair_pattern,
+            "object_pattern": self.parse_object,
+            "object": self.parse_object,
+            "pair": self.parse_pair_pattern,
+            "spread_element": self.pattern,
         }
 
         return EXPRESSION_HANDLER_MAP.get(node.type, None)
@@ -351,7 +356,7 @@ class Parser(common_parser.Parser):
                 child_count = len(shadow_left)
                 for i in range(child_count):
                     tmp_var = self.tmp_variable(statements)
-                    statements.append({"array_read": {"target": tmp_var, "array": shadow_right,"index": i}})
+                    statements.append({"array_read": {"target": tmp_var, "array": shadow_right,"index": str(i)}})
                     statements.append({"assign_stmt": {"target": shadow_left[i], "operator": shadow_operator,
                                                          "operand": tmp_var, "operand2": shadow_left[i]}})
                     return shadow_left
@@ -392,7 +397,7 @@ class Parser(common_parser.Parser):
             if self.is_comment(element):
                 continue
             shadow_element = self.parse(element, statements)
-            statements.append({"array_write": {"array": tmp_var, "index": i, "source": shadow_element}})
+            statements.append({"array_write": {"array": tmp_var, "index": str(i), "source": shadow_element}})
         return tmp_var
 
     def parenthesized_expression(self, node, statements):
@@ -442,7 +447,7 @@ class Parser(common_parser.Parser):
         statements.append({"type_assertion": {"data_type": [shadow_type], "target": shadow_expr}})
         return shadow_expr
     
-    def parse_typ_arg(self, node):
+    def parse_type_arg(self, node):
         # ???????
         ret = []
         for child in node.named_children:
@@ -506,3 +511,24 @@ class Parser(common_parser.Parser):
         if is_after:
             return tmp_var
         return shadow_node
+
+
+    def parse_pair_pattern(self, node, statements):
+        key = self.parse(node.named_children[0], statements)
+        value = self.parse(node.named_children[1], statements)
+        tmp_var = self.tmp_variable(statements)
+        statements.append({"new_map": {"target": tmp_var,"data_type": str(type(value))}})
+        statements.append({"map_write": {"map": tmp_var, "key": key, "value": value}})
+        return tmp_var
+
+
+    def parse_object(self, node, statements):
+        obj_children = node.named_children
+        tmp_var = self.tmp_variable(statements)
+        statements.append({"new_array": {"target": tmp_var, "data_type": "object"}})
+        for i in range(len(obj_children)):
+            if self.is_comment(obj_children[i]):
+                continue
+            res = self.parse(obj_children[i], statements)
+            statements.append({"array_write": {"array": tmp_var, "index": str(i), "source": res}})
+        return tmp_var
