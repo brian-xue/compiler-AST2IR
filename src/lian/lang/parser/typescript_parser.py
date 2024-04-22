@@ -23,6 +23,7 @@ class Parser(common_parser.Parser):
             "this": self.this_literal,
             "super": self.super_literal,
             "private_property_identifier": self.regular_literal,
+            "property_identifier": self.regular_literal
         }
 
         return LITERAL_MAP.get(node.type, None)
