@@ -37,6 +37,19 @@ class Parser(common_parser.Parser):
 
     def check_declaration_handler(self, node):
         DECLARATION_HANDLER_MAP = {
+            "function_declaration": self.method_declaration,
+            "variable_declaration": self.variable_declaration,
+            "lexical_declaration": self.variable_declaration,
+            "class_declaration": self.class_declaration,
+            "interface_declaration": self.interface_declaration,
+            "enum_declaration": self.enum_declaration,
+            "type_alias_declaration": self.type_alias_declaration,
+            "method_declaration": self.method_declaration,   
+            "abstract_class_declaration": self.class_declaration,
+            "generator_function_declaration": self.method_declaration,
+            "module": self.module_declaration,
+            "type_alias_declaration": self.type_alias_declaration,
+            "inport_alis": self.import_declaration,
         }
         return DECLARATION_HANDLER_MAP.get(node.type, None)
 
@@ -76,6 +89,8 @@ class Parser(common_parser.Parser):
             "object": self.parse_object,
             "pair": self.parse_pair_pattern,
             "spread_element": self.pattern,
+            "arrow_function": self.arrow_function,
+            "function_expression": self.method_declaration,
         }
 
         return EXPRESSION_HANDLER_MAP.get(node.type, None)
@@ -89,6 +104,7 @@ class Parser(common_parser.Parser):
 
     def check_statement_handler(self, node):
         STATEMENT_HANDLER_MAP = {
+            "statement_block": self.statement_block,
         }
         return STATEMENT_HANDLER_MAP.get(node.type, None)
 
