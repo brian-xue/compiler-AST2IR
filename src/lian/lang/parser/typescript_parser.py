@@ -48,7 +48,6 @@ class Parser(common_parser.Parser):
             "abstract_class_declaration": self.class_declaration,
             "generator_function_declaration": self.method_declaration,
             "module": self.module_declaration,
-            "type_alias_declaration": self.type_alias_declaration,
             "inport_alis": self.import_declaration,
         }
         return DECLARATION_HANDLER_MAP.get(node.type, None)
@@ -548,3 +547,34 @@ class Parser(common_parser.Parser):
             res = self.parse(obj_children[i], statements)
             statements.append({"array_write": {"array": tmp_var, "index": str(i), "source": res}})
         return tmp_var
+
+    def method_declaration(self,node,statements):
+        pass
+
+    def module_declaration(self,node,statements):
+        pass
+
+    def import_declaration(self,node,statements):
+        pass
+
+    def variable_declaration(self, node, statements):
+        pass
+
+    def class_declaration(self, node, statements):
+        pass
+
+    def interface_declaration(self, node, statements):
+        pass
+
+    def enum_declaration(self, node, statements):
+        pass
+
+    def type_alias_declaration(self, node, statements):
+        pass
+
+    def function_expression(self, node, statements):
+        pass
+
+    def arrow_function(self, node, statements):
+        pass
+
