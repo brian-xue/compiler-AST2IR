@@ -49,6 +49,9 @@ class Parser(common_parser.Parser):
             "generator_function_declaration": self.method_declaration,
             "module": self.module_declaration,
             "inport_alis": self.import_declaration,
+            "method_definition": self.method_declaration,
+            "abstract_method_signature": self.method_declaration,
+            "method_signature": self.method_declaration,
         }
         return DECLARATION_HANDLER_MAP.get(node.type, None)
 
@@ -90,6 +93,8 @@ class Parser(common_parser.Parser):
             "spread_element": self.pattern,
             "arrow_function": self.arrow_function,
             "function_expression": self.method_declaration,
+            "required_parameter": self.formal_parameter,
+            "optional_parameter": self.formal_parameter,
         }
 
         return EXPRESSION_HANDLER_MAP.get(node.type, None)
@@ -104,6 +109,20 @@ class Parser(common_parser.Parser):
     def check_statement_handler(self, node):
         STATEMENT_HANDLER_MAP = {
             "statement_block": self.statement_block,
+            "for_statement": self.for_statement,
+            "for_in_statement": self.for_in_statement,
+            "if_statement": self.if_statement,
+            "while_statement": self.while_statement,
+            "do_statement": self.do_statement,
+            "switch_statement": self.switch_statement,
+            "break_statement": self.break_statement,
+            "continue_statement": self.continue_statement,
+            "return_statement": self.return_statement,
+            "throw_statement": self.throw_statement,
+            "try_statement": self.try_statement,
+            "export_statement": self.export_statement,
+            "import_statement": self.import_statement,
+            "labeled_statement": self.labeled_statement,
         }
         return STATEMENT_HANDLER_MAP.get(node.type, None)
 
@@ -139,6 +158,8 @@ class Parser(common_parser.Parser):
 
     def super_literal(self, node, statements, replacement):
         return self.global_super()
+
+
 
     def parse_subscript(self,node,statements,flag = 0):
         if flag == 1: # for write
@@ -549,7 +570,56 @@ class Parser(common_parser.Parser):
         return tmp_var
 
     def method_declaration(self,node,statements):
-        pass
+        child = self.find_child_by_field(node, "name")
+        name = self.read_node_text(child)
+
+        modifiers = []
+        child = self.find_child_by_type(node, "accessibility_modifier")
+        if child:
+            modifiers.append(self.read_node_text(child))
+
+        child = self.find_child_by_type(node, "override_modifier")
+        if child:
+            modifiers.append(self.read_node_text(child))
+
+        child = self.find_child_by_field(node, "type_parameters")
+        type_parameters = self.read_node_text(child)[1:-1]
+
+
+        child = self.find_child_by_field(node, "return_type")
+        return_type = ""
+        if child:
+            named_cld = child.named_children
+            if named_cld:
+                return_type = self.read_node_text(named_cld[0])
+
+
+        new_parameters = []
+        init = []
+        child = self.find_child_by_field(node, "parameters")
+        if child and child.named_child_count > 0:
+            # need to deal with parameters
+            for p in child.named_children:
+                if self.is_comment(p):
+                    continue
+
+                self.formal_parameter(p, new_parameters,init)
+
+
+        new_body = []
+        child = self.find_child_by_field(node, "body")
+        if child:
+            for stmt in child.named_children:
+                if self.is_comment(stmt):
+                    continue
+
+                self.parse(stmt, new_body)
+
+        statements.append(
+            {"method_decl": {"attr": modifiers, "data_type": return_type, "name": name, "type_parameters": type_parameters,
+                             "parameters": new_parameters, "init": init, "body": new_body}})
+
+        return name
 
     def module_declaration(self,node,statements):
         pass
@@ -560,8 +630,71 @@ class Parser(common_parser.Parser):
     def variable_declaration(self, node, statements):
         pass
 
+    
+    CLASS_TYPE_MAP = {
+        "class_declaration": "class",
+        # "interface_declaration": "interface",
+    }
+
     def class_declaration(self, node, statements):
-        pass
+        glang_node = {}
+
+        glang_node["attr"] = []
+        glang_node["init"] = []
+        glang_node["static_init"] = []
+        glang_node["fields"] = []
+        glang_node["member_methods"] = []
+        glang_node["nested"] = []
+
+        if node.type in self.CLASS_TYPE_MAP:
+            glang_node["attr"].append(self.CLASS_TYPE_MAP[node.type])
+
+        child = self.find_child_by_type(node, "decorator")
+        if child:
+            modifiers = self.parse(child)
+            glang_node["attr"].extend(modifiers)
+
+        name = self.find_child_by_field(node, "name")
+        if name:
+            glang_node["name"] = self.read_node_text(name)
+
+        child = self.find_child_by_field(node, "type_parameters")
+        if child:
+            type_parameters = self.read_node_text(child)
+            glang_node["type_parameters"] = type_parameters[1:-1]
+
+        glang_node["supers"] = []
+        child = self.find_child_by_type(node,"class_heritage")
+        if child:
+            superclass = self.read_node_text(child)
+            parent_class = superclass.replace("extends", "").replace("implements","").split()
+            glang_node["supers"].append(parent_class)
+
+
+        child = self.find_child_by_field(node, "body")
+        self.class_body(child, glang_node)
+
+        statements.append({f"{self.CLASS_TYPE_MAP[node.type]}_decl": glang_node})
+
+
+    def class_body(self, node, glang_node):
+        if not node:
+            return
+
+        subtypes = ["method_signature", "method_definition","abstract_method_signature"]
+
+        for st in subtypes:
+            children = self.find_children_by_type(node, st)
+            if not children:
+                continue
+
+            for child in children:
+                self.parse(child, glang_node["member_methods"])
+
+
+        
+
+
 
     def interface_declaration(self, node, statements):
         pass
@@ -573,8 +706,132 @@ class Parser(common_parser.Parser):
         pass
 
     def function_expression(self, node, statements):
-        pass
+        return self.method_declaration(node, statements)
 
     def arrow_function(self, node, statements):
+        tmp_func = self.tmp_method()
+        child = self.find_child_by_field(node, "type_parameters")
+        type_parameters = self.read_node_text(child)[1:-1]
+
+
+        child = self.find_child_by_field(node, "return_type")
+        return_type = ""
+        if child:
+            named_cld = child.named_children
+            if named_cld:
+                return_type = self.read_node_text(named_cld[0])
+
+        
+        new_parameters = []
+        init = []
+        child = self.find_child_by_field(node, "parameters")
+        if child and child.named_child_count > 0:
+            # need to deal with parameters
+            for p in child.named_children:
+                if self.is_comment(p):
+                    continue
+
+                self.formal_parameter(p, new_parameters,init)
+
+
+        new_body = []
+        child = self.find_child_by_field(node, "body")
+        if child:
+            for stmt in child.named_children:
+                if self.is_comment(stmt):
+                    continue
+
+                self.parse(stmt, new_body)
+
+
+        statements.append({"method_decl": {"name": tmp_func, "parameters": new_parameters, "body": new_body}})
+
+        return tmp_func
+
+
+        
+
+    
+    def statement_block(self, node, statements):
+        children = node.named_children
+        for child in children:
+            if self.is_comment(child):
+                continue
+            self.parse(child, statements)
+
+
+    def formal_parameter(self, node, statements,init=[]):
+        modifiers = []
+        child = self.find_child_by_type(node, "accessibility_modifier")
+        if child:
+            modifiers.append(self.read_node_text(child))
+
+        child = self.find_child_by_type(node, "override_modifier")
+        if child:
+            modifiers.append(self.read_node_text(child))
+
+        # child = self. find readonly
+
+        child = self.find_child_by_field(node, "pattern")
+        name = self.parse(child, statements)
+
+        child = self.find_child_by_field(node, "value")
+        if child:    
+            value = self.parse(child, statements)
+            init.append({"assign_stmt": {"target": name, "operand": value}})
+
+
+
+        child = self.find_child_by_field(node, "type")
+        data_type = ""
+        if child:
+            named_cld = child.named_children
+            if named_cld:
+                data_type = self.read_node_text(named_cld[0])
+
+        statements.append({"parameter_decl": {"attr": modifiers, "data_type": data_type, "name": name}})
+
+
+
+    
+    def for_statement(self, node, statements):
         pass
 
+    def for_in_statement(self, node, statements):
+        pass
+
+    def if_statement(self, node, statements):
+        pass
+
+    def while_statement(self, node, statements):
+        pass
+
+    def do_statement(self, node, statements):
+        pass
+
+    def switch_statement(self, node, statements):
+        pass
+
+    def break_statement(self, node, statements):
+        pass
+
+    def continue_statement(self, node, statements):
+        pass
+
+    def return_statement(self, node, statements):
+        pass
+
+    def throw_statement(self, node, statements):
+        pass
+
+    def try_statement(self, node, statements):
+        pass
+
+    def export_statement(self, node, statements):
+        pass
+
+    def import_statement(self, node, statements):
+        pass
+
+    def labeled_statement(self, node, statements):
+        pass
