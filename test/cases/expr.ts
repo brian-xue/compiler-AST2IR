@@ -13,6 +13,35 @@ class ing extends T implements M { abc<T,S>(a, b=3):int {a = 5} }
 
 function abc<T,S>(a:int, b=3):int {a = 5}
 
-m = (x: number, y: number): number => {
-    return x + y;
-    }
+sum = (x: number, y: number) => x + y;
+
+
+interface ButtonProps extends IProps {
+    // label: string;
+    // onClick: () => void;
+    <T,S>(p,q):int;
+}
+
+while(x > 0) 
+    x = x / 2;
+
+do
+    x = x / 2;
+while(x > 0);
+
+for(con; s>5; a++) 
+    foo = 1;
+
+if(cond)
+    doThis + 4;
+else
+    doThat - 3;
+
+switch(a)
+{
+    case 1: abCS;
+    case 5: cd+Ke;
+    default: efbs;
+}
+
+import { a, b, c } from 'module';

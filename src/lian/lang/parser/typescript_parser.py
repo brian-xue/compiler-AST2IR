@@ -52,6 +52,8 @@ class Parser(common_parser.Parser):
             "method_definition": self.method_declaration,
             "abstract_method_signature": self.method_declaration,
             "method_signature": self.method_declaration,
+            "public_field_definition": self.variable_declaration,
+            "function_signature": self.method_declaration,
         }
         return DECLARATION_HANDLER_MAP.get(node.type, None)
 
@@ -93,8 +95,8 @@ class Parser(common_parser.Parser):
             "spread_element": self.pattern,
             "arrow_function": self.arrow_function,
             "function_expression": self.method_declaration,
-            "required_parameter": self.formal_parameter,
-            "optional_parameter": self.formal_parameter,
+            # "required_parameter": self.formal_parameter,
+            # "optional_parameter": self.formal_parameter,
         }
 
         return EXPRESSION_HANDLER_MAP.get(node.type, None)
@@ -123,6 +125,9 @@ class Parser(common_parser.Parser):
             "export_statement": self.export_statement,
             "import_statement": self.import_statement,
             "labeled_statement": self.labeled_statement,
+            "expression_statement": self.expression_statement,
+            "with_statement": self.with_statement,
+            "empty_statement": self.empty_statement,
         }
         return STATEMENT_HANDLER_MAP.get(node.type, None)
 
@@ -214,6 +219,7 @@ class Parser(common_parser.Parser):
             return shadow_right
 
         if left.type == "member_expression":
+            statements.append({"assign": self.read_node_text(node)})
             shadow_receiver_obj, shadow_field = self.member_expression(left, statements,1)
             statements.append({"field_write": {"receiver_object": shadow_receiver_obj, "field": shadow_field, "source": shadow_right}})
             return shadow_right
@@ -633,7 +639,7 @@ class Parser(common_parser.Parser):
     
     CLASS_TYPE_MAP = {
         "class_declaration": "class",
-        # "interface_declaration": "interface",
+        "interface_declaration": "interface",
     }
 
     def class_declaration(self, node, statements):
@@ -691,13 +697,106 @@ class Parser(common_parser.Parser):
             for child in children:
                 self.parse(child, glang_node["member_methods"])
 
+        children = self.find_children_by_type(node, "public_field_definition")
+        if children:
+            for child in children:
+                statements = []
+                extra = glang_node["init"]
+                if 'static' in self.read_node_text(child).split():
+                    extra = glang_node["static_init"]
+                self.parse(child, glang_node["fields"])
+                for stmt in statements:
+                    if "variable_decl" in stmt:
+                        glang_node["fields"].append(stmt)
+                    elif "assign_stmt" in stmt:
+                        field = stmt["assign_stmt"]
+                        extra.append({"field_write": {"receiver_object": self.global_this(),
+                                                            "field": field["target"], "source": field["operand"]}})
 
+
+        children = self.find_children_by_type(node, "static_block")
+        if children:
+            for child in children:
+                extra = glang_node["static_init"]
+                statements = []
+                self.statement_block(self.named_children[0], statements)
+                for stmt in statements:
+                    if 'variable_decl' in stmt:
+                        glang_node["fields"].append(stmt)
+                    elif 'assign_stmt' in stmt:
+                        field = stmt["assign_stmt"]
+                        extra.append({"field_write": {"receiver_object": self.global_this(),
+                                                            "field": field["target"], "source": field["operand"]}})
+                    elif 'method_decl' in stmt:
+                        glang_node["member_methods"].append(stmt)
+                    else:
+                        glang_node["nested"].append(stmt)
         
 
 
 
     def interface_declaration(self, node, statements):
-        pass
+        glang_node = {}
+
+        glang_node["attr"] = []
+        glang_node["init"] = []
+        glang_node["static_init"] = []
+        glang_node["fields"] = []
+        glang_node["member_methods"] = []
+        glang_node["nested"] = []
+
+        if node.type in self.CLASS_TYPE_MAP:
+            glang_node["attr"].append(self.CLASS_TYPE_MAP[node.type])
+
+        name = self.find_child_by_field(node, "name")
+        if name:
+            glang_node["name"] = self.read_node_text(name)
+
+        child = self.find_child_by_field(node, "type_parameters")
+        if child:
+            type_parameters = self.read_node_text(child)
+            glang_node["type_parameters"] = type_parameters[1:-1]
+
+        glang_node["supers"] = []
+        child = self.find_child_by_type(node,"extends_type_clause")
+        if child:
+            superclass = self.read_node_text(child)
+            parent_class = superclass.replace("extends", "").replace("implements","").split()
+            glang_node["supers"].append(parent_class)
+
+        child = self.find_child_by_field(node, "body")
+        self.object_type(child, glang_node)
+
+        statements.append({f"{self.CLASS_TYPE_MAP[node.type]}_decl": glang_node})
+
+
+    def object_type(self, node, glang_node):
+        subtypes = ["method_signature", "construct_signature"]
+        for st in subtypes:
+            children = self.find_children_by_type(node, st)
+            if not children:
+                continue
+
+            for child in children:
+                self.method_declaration(child, glang_node["member_methods"])
+
+        children = self.find_children_by_type(node, "call_signature")
+        if children:
+            for child in children:
+                self.arrow_function(child, glang_node["member_methods"])
+
+        children = self.find_children_by_type(node, "property_signature")
+        if children:
+            for child in children:
+                self.variable_declaration(child, glang_node["fields"])
+
+        # children = self.find_children_by_type(node, "index_signature")
+
+        children = self.find_children_by_type(node, "export_statement")
+        if children:
+            for child in children:
+                self.export_statement(child, glang_node["nested"])
+
 
     def enum_declaration(self, node, statements):
         pass
@@ -709,6 +808,7 @@ class Parser(common_parser.Parser):
         return self.method_declaration(node, statements)
 
     def arrow_function(self, node, statements):
+        statements.append({"arrow_function": self.read_node_text(node)})
         tmp_func = self.tmp_method()
         child = self.find_child_by_field(node, "type_parameters")
         type_parameters = self.read_node_text(child)[1:-1]
@@ -735,13 +835,19 @@ class Parser(common_parser.Parser):
 
 
         new_body = []
-        child = self.find_child_by_field(node, "body")
-        if child:
-            for stmt in child.named_children:
-                if self.is_comment(stmt):
-                    continue
+        body = self.find_child_by_field(node, "body")
+        if body:
+            if body.type == "statement_block":
+                for stmt in body.named_children:
+                    if self.is_comment(stmt):
+                        continue
 
-                self.parse(stmt, new_body)
+                    shadow_expr = self.parse(body, new_body)
+                    if stmt == body.named_children[-1]:
+                        new_body.append({"return": {"target": shadow_expr}})
+            else:
+                shadow_expr = self.parse(body, new_body)
+                new_body.append({"return": {"target": shadow_expr}})
 
 
         statements.append({"method_decl": {"name": tmp_func, "parameters": new_parameters, "body": new_body}})
@@ -794,44 +900,343 @@ class Parser(common_parser.Parser):
 
 
     
+     # /* TODO prerequisites: lexical_declaration, variable_declaration not implemented
     def for_statement(self, node, statements):
-        pass
+        init_children = self.find_children_by_field(node, "initializer")
+        step_children = self.find_children_by_field(node, "increment")
+
+        condition = self.find_child_by_field(node, "condition")
+
+        init_body = []
+        condition_init = []
+        step_body = []
+
+        shadow_condition = self.parse(condition, condition_init)
+        for child in init_children:
+            self.parse(child, init_body)
+
+        # Change from Java: may contain no step expressions. Leave step_body blank.
+        # if step_children and step_children.named_child_count > 0:
+        if step_children:
+            for child in step_children:
+                self.parse(child, step_body)
+
+        for_body = []
+
+        block = self.find_child_by_field(node, "body")
+        self.parse(block, for_body)
+
+        statements.append({"for_stmt":
+                               {"init_body": init_body,
+                                "condition": shadow_condition,
+                                "condition_prebody": condition_init,
+                                "update_body": step_body,
+                                "body": for_body}})
+
 
     def for_in_statement(self, node, statements):
-        pass
+
+        name = []
+        target = []
+        attr = []
+        data_type = ""
+
+        left = self.find_child_by_field(node, "left")
+        right = self.find_child_by_field(node, "right")
+        kind = self.find_child_by_field(node, "kind")
+
+        shadow_left = self.parse(left, statements)
+        if type(shadow_left) == list:
+            for i in range(len(shadow_left)):
+                name.append(shadow_left[i])
+        else:
+            name.append(shadow_left)
+
+        if kind:
+            if self.read_node_text(kind) == "const":
+                attr.append("const")
+
+        target.append(self.parse(right, statements))
+            
+        body = []
+        block = self.find_child_by_field(node, "body")
+        self.parse(block, body)
+
+        statements.append({"for_in_stmt": {"name": name, "target": target,"data_type":data_type, "attr": attr, "body": body}})
+
+
+
 
     def if_statement(self, node, statements):
-        pass
+        condition_part = self.find_child_by_field(node, "condition")
+        true_part = self.find_child_by_field(node, "consequence")
+        false_part = self.find_child_by_field(node, "alternative")
+
+        true_body = []
+
+        shadow_condition = self.parse(condition_part, statements)
+        self.parse(true_part, true_body)
+        if false_part:
+            false_body = []
+            self.parse(false_part, false_body)
+            # Change from Java: else_clause wraps another rule around the false body.
+            statements.append({"if_stmt": {"condition": shadow_condition, "then_body": true_body, "else_body": false_body}})
+        else:
+            statements.append({"if_stmt": {"condition": shadow_condition, "then_body": true_body}})
 
     def while_statement(self, node, statements):
-        pass
+        # No change from Java.
+        condition = self.find_child_by_field(node, "condition")
+        body = self.find_child_by_field(node, "body")
+
+        new_condition_init = []
+
+        shadow_condition = self.parse(condition, new_condition_init)
+
+        new_while_body = []
+        self.parse(body, new_while_body)
+
+        statements.extend(new_condition_init)
+        new_while_body.extend(new_condition_init)
+
+        statements.append({"while_stmt": {"condition": shadow_condition, "body": new_while_body}})
 
     def do_statement(self, node, statements):
-        pass
+        condition = self.find_child_by_field(node, "condition")
+        body = self.find_child_by_field(node, "body")
+
+        new_condition_init = []
+
+        shadow_condition = self.parse(condition, new_condition_init)
+
+        new_while_body = []
+        self.parse(body, new_while_body)
+        # Difference: condition not judged at the beginning
+        # statements.extend(new_condition_init)
+        new_while_body.extend(new_condition_init)
+
+        statements.append({"dowhile_stmt": {"condition": shadow_condition, "body": new_while_body}})
 
     def switch_statement(self, node, statements):
-        pass
+        switch_block = self.find_child_by_field(node, "body")
+        switch_stmt_list = []
+
+        for child in switch_block.named_children:
+            if self.is_comment(child):
+                continue
+
+            elif child.type == "switch_default":
+                shadow_default_body = []
+                default_statements = self.find_child_by_field(child, "body")
+                self.parse(default_statements, shadow_default_body)
+                switch_stmt_list.append({"default_stmt": {"body": shadow_default_body}})
+
+            elif child.type == "switch_case":
+                shadow_value = self.parse(self.find_child_by_field(child, "value"), statements)
+                if child.named_child_count > 1:
+                    shadow_case_body = []
+                    case_statements = self.find_child_by_field(child, "body")
+                    self.parse(case_statements, shadow_case_body)
+                    switch_stmt_list.append({"case_stmt": {"condition": shadow_value, "body": shadow_case_body}})
+                else:
+                    switch_stmt_list.append({"case_stmt": {"condition": shadow_value}})
+
+        condition = self.find_child_by_field(node, "value")
+        shadow_condition = self.parse(condition, statements)   
+        statements.append({"switch_stmt": {"condition": shadow_condition, "body": switch_stmt_list}})
+
+    def empty_statement(self, node, statements):
+        pass # FINAL, NOT A STUB
+
+    def expression_statement(self, node, statement):
+        expression = node.named_children[0]
+        shadow_expression = self.parse(expression, statement)
+        statement.append({"expression_stmt": {"target": shadow_expression}})
 
     def break_statement(self, node, statements):
-        pass
+        shadow_name = ""
+        if node.named_child_count > 0:
+            name = node.named_children[0]
+            shadow_name = self.parse(name, statements)
+
+        statements.append({"break_stmt": {"target": shadow_name}})
 
     def continue_statement(self, node, statements):
-        pass
+        shadow_name = ""
+        if node.named_child_count > 0:
+            name = node.named_children[0]
+            shadow_name = self.parse(name, statements)
+
+        statements.append({"continue_stmt": {"target": shadow_name}})
 
     def return_statement(self, node, statements):
-        pass
+        shadow_name = ""
+        if node.named_child_count > 0:
+            name = node.named_children[0]
+            shadow_name = self.parse(name, statements)
+
+        statements.append({"return_stmt": {"target": shadow_name}})
+        return shadow_name
 
     def throw_statement(self, node, statements):
-        pass
+        target = self.parse(node.named_children[0], statements)
+        statements.append({"throw_stmt": {"target": target}})
 
     def try_statement(self, node, statements):
-        pass
+        body = self.find_child_by_field(node, "body")
+        try_body = []
+
+        self.parse(body, try_body)
+
+        catch_body = []
+        catch_block = self.find_child_by_field(node, "handler")
+        if catch_block:
+            self.parse_catch_clause(catch_block, catch_body)
+        
+        finally_body = []
+        finally_block = self.find_child_by_field(node, "finalizer")
+        if finally_block:
+            self.parse_finally_clause(finally_block, finally_body)
+
+        else_body = []
+
+        statements.append({"try_stmt": {"try_body": try_body,"else_body": else_body
+        , "catch_body": catch_body, "finally_body": finally_body}})
+
+    def parse_catch_clause(self, node, statements):
+        body = self.find_child_by_field(node, "body")
+        catch_body = []
+        self.parse(body, catch_body)
+
+        param = self.find_child_by_field(node, "parameter")
+        shadow_param = self.parse(param, statements)
+
+        type_list = []
+        type_annotation = self.find_child_by_field(param, "type")
+        if type_annotation:
+            type_list.append(self.read_node_text(type_annotation)[1:-1])
+
+        statements.append({"catch_clause": {"param": shadow_param, "type": type_list, "body": catch_body}})
+
+
+    def parse_finally_clause(self, node, statements):
+        body = self.find_child_by_field(node, "body")
+        finally_body = []
+        self.parse(body, finally_body)
+        statements.append({"finally_stmt": {"body": finally_body}})
 
     def export_statement(self, node, statements):
-        pass
+        export_stmt = {}
+
+        source = self.find_child_by_field(node, "source")
+        if source:
+            export_stmt["source"] = self.read_node_text(source)
+
+        child = self.find_child_by_field(node, "declaration")
+        if child:
+            shadow_declare = self.parse(child, statements)
+            export_stmt["name"] = shadow_declare
+
 
     def import_statement(self, node, statements):
-        pass
+        child = self.find_child_by_type(node,"import_clause")
+        if child:
+            source = self.read_node_text(self.find_child_by_field(node, "source"))
+            self.import_clause(child, statements, source)
+            return
+
+        child = self.find_child_by_type(node,"import_require_clause")
+        if child:
+            require_clause = self.require_clause(child, statements)
+            statements.append({"import_stmt": {"name": require_clause}})
+            return require_clause
+
+
+        child = self.find_child_by_field(node,"source")
+        if child:
+            source = self.read_node_text(child)
+            statements.append({"import_stmt": {"name": source}})
+            return source
+
+
+
+    def import_clause(self, node, statements,source):
+        child = self.find_child_by_type(node,"namespace_import")
+        if child:
+            als = self.read_node_text(self.find_child_by_type(child,"identifier"))
+            statements.append({"import_as_stmt": {"name": source, "alias": als}})
+            return als
+
+        
+        child = self.find_child_by_type(node,"named_imports")
+        if child:
+            import_specifiers = self.named_imports(child, statements)
+            statements.append({"import_stmt": {"name": import_specifiers, "source": source}})
+            return 
+
+        child = node.named_children[0]
+        name = self.read_node_text(child)
+        statements.append({"import_stmt": {"name": name, "source": source}})
+        return        
+
+
+
+    
+    def named_imports(self, node, statements):
+        import_specifiers = []
+        for child in node.named_children:
+            name = self.read_node_text(self.find_child_by_field(child,"name"))
+            als = self.find_child_by_field(child,"alias")
+            if als:
+                alias = self.read_node_text(als)
+                statements.append({"type_alias_stmt":{"source": name, "target": alias}})
+                import_specifiers.append(name)
+            else:
+                import_specifiers.append(name)
+
+        return import_specifiers
+
+        
+
+    def require_clause(self, node, statements):
+        child = self.find_child_by_type(node,"identifier")
+        name = self.read_node_text(child)
+
+        child = self.find_child_by_field(node,"source")
+        source = self.read_node_text(child)
+
+        statements.append({"require": {"name": name, "source": source}})
+
+        return name
+
+
+    def with_statement(self, node, statements):
+        glang_node = {}
+        glang_node["attr"] = []
+        glang_node["with_init"] = []
+        glang_node["body"] = []
+
+        child = self.find_child_by_field(node, "object")
+        shadow_object = self.parse(child, glang_node["with_init"])
+
+        child = self.find_child_by_field(node, "body")
+        self.parse(child, glang_node["body"])
+
+        statements.append({"with_stmt": glang_node})
+
+
+            
 
     def labeled_statement(self, node, statements):
-        pass
+        name = node.named_children[0]
+
+        shadow_name = self.parse(name, statements)
+        statements.append({"label_stmt": {"name": shadow_name}})
+
+        if node.named_child_count > 1:
+            stmt = node.named_children[1]
+            self.parse(stmt, statements)
+
+
+    def expression_statement(self, node, statements):
+        return self.parse(node.named_children[0], statements)
