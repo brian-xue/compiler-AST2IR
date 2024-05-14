@@ -411,7 +411,7 @@ class Parser(common_parser.Parser):
         if left.type == "member_expression":
             shadow_receiver_obj, shadow_field = self.member_expression(left, statements,1)
             tmp_var = self.tmp_variable(statements)
-            statements.append({"field_read": {"target": tmp_var, "receiver_object": shadow_receiver_object, "field": shadow_field}})
+            statements.append({"field_read": {"target": tmp_var, "receiver_object": shadow_receiver_obj, "field": shadow_field}})
             tmp_var2 = self.tmp_variable(statements)
             statements.append({"assign_stmt": {"target": tmp_var2, "operator": shadow_operator,
                                                "operand": tmp_var, "operand2": shadow_right}})
@@ -681,6 +681,7 @@ class Parser(common_parser.Parser):
         self.class_body(child, glang_node)
 
         statements.append({f"{self.CLASS_TYPE_MAP[node.type]}_decl": glang_node})
+        return glang_node["name"]
 
 
     def class_body(self, node, glang_node):
@@ -768,6 +769,7 @@ class Parser(common_parser.Parser):
         self.object_type(child, glang_node)
 
         statements.append({f"{self.CLASS_TYPE_MAP[node.type]}_decl": glang_node})
+        return glang_node["name"]
 
 
     def object_type(self, node, glang_node):
@@ -1132,10 +1134,56 @@ class Parser(common_parser.Parser):
         if source:
             export_stmt["source"] = self.read_node_text(source)
 
-        child = self.find_child_by_field(node, "declaration")
-        if child:
-            shadow_declare = self.parse(child, statements)
+        children = self.find_children_by_field(node, "declaration")
+        if children:
+            shadow_declare = self.parse(children[0], statements)
             export_stmt["name"] = shadow_declare
+
+        child = self.find_child_by_type(node, "export_clause")
+        if child:
+            self.export_clause(child, statements, export_stmt)
+
+        child = self.find_child_by_type(node,"namespace_export")
+        if child:
+            export_stmt["name"] = "*"
+            als = self.read_node_text(child.children[2])
+            export_stmt["alias"] = als
+
+        if len(node.children) > 1:
+            if self.read_node_text(node.children[1]) == "*":
+                export_stmt["name"] = "*"
+
+            elif self.read_node_text(node.children[1]) == "=":
+                name = self.read_node_text(node.children[2])
+                export_stmt["name"] = name
+
+        if len(node.children) > 2:
+            als = self.read_node_text(node.children[2])
+            if als == "namespace":
+                name = self.read_node_text(node.children[3])
+                export_stmt["name"] = name
+                export_stmt["alias"] = als
+
+        
+
+        statements.append({"export_stmt": export_stmt})
+
+
+    def export_clause(self, node, statements, export_stmt):
+        export_stmt["name"] = []
+        export_stmt["alias"] = []
+
+
+        children = self.find_children_by_type(node, "export_specifier")
+        for child in children:
+            name = self.read_node_text(self.find_child_by_field(child, "name"))
+            export_stmt["name"].append(name)
+
+            als = self.find_child_by_field(child, "alias")
+            if als:
+                alias = self.read_node_text(als)
+                export_stmt["alias"].append(alias)
+
 
 
     def import_statement(self, node, statements):

@@ -44,4 +44,8 @@ switch(a)
     default: efbs;
 }
 
-import { a, b, c } from 'module';
+export { a, b, c } from 'module';
+export interface IRenderable<T extends IProps> {
+    render(): void;
+}
+export * from 'module';
