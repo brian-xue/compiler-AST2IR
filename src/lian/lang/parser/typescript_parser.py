@@ -415,7 +415,7 @@ class Parser(common_parser.Parser):
             tmp_var2 = self.tmp_variable(statements)
             statements.append({"assign_stmt": {"target": tmp_var2, "operator": shadow_operator,
                                                "operand": tmp_var, "operand2": shadow_right}})
-            statements.append({"field_write": {"receiver_object": shadow_receiver_object, "field": shadow_field, "source": tmp_var2}})
+            statements.append({"field_write": {"receiver_object": shadow_receiver_obj, "field": shadow_field, "source": tmp_var2}})
             return tmp_var2
 
 
