@@ -628,15 +628,65 @@ class Parser(common_parser.Parser):
         return name
 
     def module_declaration(self,node,statements):
-        pass
+        name = self.find_child_by_field(node, "name")
+        name = self.read_node_text(name)
+
+        new_body = []
+        child = self.find_child_by_field(node, "body")
+        if child:
+            for stmt in child.named_children:
+                if self.is_comment(stmt):
+                    continue
+
+                self.parse(stmt, new_body)
+        
+        statements.append(
+            {"module_decl": {"name": name, "body": new_body}})
 
     def import_declaration(self,node,statements):
         pass
 
-    def variable_declaration(self, node, statements):
-        pass
 
-    
+    def variable_declaration(self, node, statements):
+        # declaration
+        declarators = node.named_children
+
+        child = self.find_child_by_type(node,"accessibility_modifier")
+        attr=[]
+        if child:
+            attr.append(self.read_node_text(child))
+        child = self.find_child_by_type(node,"override_modifier")
+        if child:
+            attr.append(self.read_node_text(child))
+
+        for child in declarators:
+            has_init = False
+
+            data_type = self.find_child_by_field(child, "type")
+            shadow_type=""
+            if data_type:
+                named_cld = data_type.named_children
+                if named_cld:
+                    shadow_type = self.read_node_text(named_cld[0])
+
+            name = self.find_child_by_field(child, "name")
+            name = self.read_node_text(name)
+            value = self.find_child_by_field(child, "value")
+            if value:
+                has_init = True
+
+            if value and value.type == "subscript_expression":
+                tmp_var = self.parse_subscript(value,statements)
+
+                shadow_value = tmp_var
+            else:
+                shadow_value = self.parse(value, statements)
+
+            statements.append({"variable_decl": {"attr": attr, "data_type": shadow_type, "name": name}})
+            if has_init:
+                statements.append({"assign_stmt": {"target": name, "operand": shadow_value}})
+
+
     CLASS_TYPE_MAP = {
         "class_declaration": "class",
         "interface_declaration": "interface",
@@ -801,10 +851,62 @@ class Parser(common_parser.Parser):
 
 
     def enum_declaration(self, node, statements):
-        pass
+        glang_node = {}
+        glang_node["attr"] = []
+        glang_node["init"] = []
+        glang_node["static_init"] = []
+        glang_node["fields"] = []
+        glang_node["member_methods"] = []
+        glang_node["enum_constants"] = []
+        glang_node["nested"] = []
+
+        child = self.find_child_by_field(node, "name")
+        glang_node["name"] = self.read_node_text(child)
+
+        glang_node["supers"] = []
+
+        child = self.find_child_by_field(node, "body")
+        self.enum_body(child, glang_node)
+
+        statements.append({"enum_decl": glang_node})
+
+    def enum_body(self, node, glang_node):
+        children = node.named_children
+        if children:
+            for child in children:
+                if child.type == "property_identifier":
+                    name = self.read_node_text(child)
+                    glang_node["fields"].append(
+                        {"variable_decl": {"data_type":"", "name":name}}
+                    )
+                else:
+                    name = self.find_child_by_field(child, "name")
+                    name = self.read_node_text(name)
+                    glang_node["fields"].append(
+                        {"variable_decl": {"data_type":"", "name":name}}
+                    )
+                    value = self.find_child_by_field(child, "value")
+                    if value:
+                        statements = []
+                        shadow_value = self.parse(value, statements)
+                        glang_node["init"].append(statements)
+                        glang_node["init"].append({"assign_stmt": {"target": name, "operand": shadow_value}})
+
 
     def type_alias_declaration(self, node, statements):
-        pass
+        child = self.find_child_by_field(node, "name")
+        name = self.read_node_text(child)
+
+        type_parameters = self.find_child_by_field(node, "type_parameters")
+        if type_parameters:
+            type_parameters = self.read_node_text(child)
+            type_parameters = type_parameters[1:-1]
+        
+        typ = self.find_child_by_field(node, "value")
+        shadow_type = self.read_node_text(typ)
+        
+        statements.append({"type_alias_stmt": {"target": name, "type": type_parameters, "source": [shadow_type]}})
+
 
     def function_expression(self, node, statements):
         return self.method_declaration(node, statements)
