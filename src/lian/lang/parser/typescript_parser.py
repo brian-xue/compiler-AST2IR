@@ -660,6 +660,9 @@ class Parser(common_parser.Parser):
             modifiers = self.parse(child)
             glang_node["attr"].extend(modifiers)
 
+        if "abstract" in self.read_node_text(node).split():
+            glang_node["attr"].append("abstract")
+
         name = self.find_child_by_field(node, "name")
         if name:
             glang_node["name"] = self.read_node_text(name)
@@ -705,7 +708,7 @@ class Parser(common_parser.Parser):
                 extra = glang_node["init"]
                 if 'static' in self.read_node_text(child).split():
                     extra = glang_node["static_init"]
-                self.parse(child, glang_node["fields"])
+                self.parse(child, statements)
                 for stmt in statements:
                     if "variable_decl" in stmt:
                         glang_node["fields"].append(stmt)
