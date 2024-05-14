@@ -1,12 +1,12 @@
-// b[2] +=3 ;
-// m =new Array(4) ;
-// l = "compiler";
-// p = ['1', '2', '3', '4'];
-// originalMethod.apply(this, args);
-// console.log(c += Math.abs(a - b));
-// under.a = 10;
-// a ==b ? a++ : b++ ;
-// b[2][3] = 6;
+b[2] +=3 ;
+m =new Array(4) ;
+l = "compiler";
+p = ['1', '2', '3', '4'];
+originalMethod.apply(this, args);
+console.log(c += Math.abs(a - b));
+under.a = 10;
+a ==b ? a++ : b++ ;
+b[2][3] = 6;
 
 class ing extends T implements M { abc<T,S>(a, b=3):int {a = 5} }
 
@@ -49,3 +49,17 @@ export interface IRenderable<T extends IProps> {
     render(): void;
 }
 export * from 'module';
+
+class Component<T extends IProps> {
+    a = 3;
+    props: T;
+    constructor(props: T) {
+        this.props = props;
+    }
+}
+
+for (let i = 0; i < 10; i++) {
+    console.log(i);
+}
+
+// var a = 3;

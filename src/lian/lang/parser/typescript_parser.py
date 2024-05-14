@@ -52,7 +52,7 @@ class Parser(common_parser.Parser):
             "method_definition": self.method_declaration,
             "abstract_method_signature": self.method_declaration,
             "method_signature": self.method_declaration,
-            "public_field_definition": self.variable_declaration,
+            "public_field_definition": self.public_field_definition,
             "function_signature": self.method_declaration,
         }
         return DECLARATION_HANDLER_MAP.get(node.type, None)
@@ -785,6 +785,47 @@ class Parser(common_parser.Parser):
                         glang_node["member_methods"].append(stmt)
                     else:
                         glang_node["nested"].append(stmt)
+
+
+
+    def public_field_definition(self, node, statements):
+
+        child = self.find_child_by_type(node,"accessibility_modifier")
+        attr=[]
+        if child:
+            attr.append(self.read_node_text(child))
+        child = self.find_child_by_type(node,"override_modifier")
+        if child:
+            attr.append(self.read_node_text(child))
+
+        if 'static' in self.read_node_text(node).split():
+            attr.append("static")
+
+        has_init = False
+
+        data_type = self.find_child_by_field(node, "type")
+        shadow_type=""
+        if data_type:
+            named_cld = data_type.named_children
+            if named_cld:
+                shadow_type = self.read_node_text(named_cld[0])
+
+        name = self.find_child_by_field(node, "name")
+        name = self.read_node_text(name)
+        value = self.find_child_by_field(node, "value")
+        if value:
+            has_init = True
+
+        if value and value.type == "subscript_expression":
+            tmp_var = self.parse_subscript(value,statements)
+
+            shadow_value = tmp_var
+        else:
+            shadow_value = self.parse(value, statements)
+
+        statements.append({"variable_decl": {"attr": attr, "data_type": shadow_type, "name": name}})
+        if has_init:
+            statements.append({"assign_stmt": {"target": name, "operand": shadow_value}})
         
 
 
