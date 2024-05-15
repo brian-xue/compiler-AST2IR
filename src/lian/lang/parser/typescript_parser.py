@@ -884,7 +884,7 @@ class Parser(common_parser.Parser):
         children = self.find_children_by_type(node, "property_signature")
         if children:
             for child in children:
-                self.variable_declaration(child, glang_node["fields"])
+                self.public_field_definition(child, glang_node["fields"])
 
         # children = self.find_children_by_type(node, "index_signature")
 
@@ -956,7 +956,6 @@ class Parser(common_parser.Parser):
         return self.method_declaration(node, statements)
 
     def arrow_function(self, node, statements):
-        statements.append({"arrow_function": self.read_node_text(node)})
         tmp_func = self.tmp_method()
         child = self.find_child_by_field(node, "type_parameters")
         type_parameters = self.read_node_text(child)[1:-1]
@@ -998,7 +997,7 @@ class Parser(common_parser.Parser):
                 new_body.append({"return": {"target": shadow_expr}})
 
 
-        statements.append({"method_decl": {"name": tmp_func, "parameters": new_parameters, "body": new_body}})
+        statements.append({"method_decl": {"name": tmp_func, "parameters": new_parameters, "body": new_body,"data_type": return_type}})
 
         return tmp_func
 
@@ -1358,7 +1357,7 @@ class Parser(common_parser.Parser):
         child = self.find_child_by_type(node,"namespace_import")
         if child:
             als = self.read_node_text(self.find_child_by_type(child,"identifier"))
-            statements.append({"import_as_stmt": {"name": source, "alias": als}})
+            statements.append({"import_as_stmt": {"name": "*", "alias": als,"source": source}})
             return als
 
         

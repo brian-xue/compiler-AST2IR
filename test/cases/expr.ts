@@ -1,49 +1,62 @@
-// b[2] +=3 ;
-// m =new Array(4) ;
-// l = "compiler";
-// p = ['1', '2', '3', '4'];
-// originalMethod.apply(this, args);
-// console.log(c += Math.abs(a - b));
-// under.a = 10;
-// a ==b ? a++ : b++ ;
-// b[2][3] = 6;
+import { IProps,Component,IRenderable } from './IProps';
+import  * as React from 'react';
+import {a as b, c as d} from './IProps';
 
-// class ing extends T implements M { abc<T,S>(a, b=3):int {a = 5} }
+var sum = (x: number, y: number) => x + y;
 
-
-// function abc<T,S>(a:int, b=3):int {a = 5}
-
-// sum = (x: number, y: number) => x + y;
-
-
-// interface ButtonProps extends IProps {
-//     // label: string;
-//     // onClick: () => void;
-//     <T,S>(p,q):int;
-// }
-
-// while(x > 0) 
-//     x = x / 2;
-
-// do
-//     x = x / 2;
-// while(x > 0);
-
-// for(con; s>5; a++) 
-//     foo = 1;
-
-// if(cond)
-//     doThis + 4;
-// else
-//     doThat - 3;
-
-switch(a)
-{
-    case 1: abCS;
-    case 5: cd+Ke;
-    default: efbs();
+try {
+    console.log(sum(3, 4));
+}
+catch (e) {
+    console.log(e);
+}
+finally {
+    console.log("Finally block");
 }
 
+throw new Error("This is an error");
+
+var m;
+
+m = input("Enter a number");
+
+if (m > 5)
+    {
+        console.log("Number is greater than 5");
+    }
+else
+    {
+        console.log("Number is less than or equal to 5");
+    }
+
+
+export interface ButtonProps extends IProps {
+    label: string;
+    onClick: () => void;
+}
+
+class Component<T extends IProps> {
+    a = 3;
+    props: T;
+    constructor(props: T) {
+        this.props = props;
+    }
+}
+
+
+function input(message: string): number {
+    return parseInt(prompt(message));
+}
+
+
+class Button extends Component<ButtonProps> implements IRenderable<ButtonProps> {
+    render(): void {
+        console.log("Rendering button");
+        this.props.onClick();
+    }
+}
+
+var day;
 
 switch (day) {
     case 0:
@@ -72,22 +85,24 @@ switch (day) {
         break;
 }
 
-// export { a, b, c } from 'module';
-// export interface IRenderable<T extends IProps> {
-//     render(): void;
-// }
-// export * from 'module';
+for (let i = 0; i < 10; i++) {
+    console.log(i);
+}
 
-// class Component<T extends IProps> {
-//     a = 3;
-//     props: T;
-//     constructor(props: T) {
-//         this.props = props;
-//     }
-// }
+let i = 0;
 
-// for (let i = 0; i < 10; i++) {
-//     console.log(i);
-// }
+do {
+    console.log("Hello");
+}while (i++ < 10);
 
-// // var a = 3;
+while (i++ < 30) {
+    console.log("Hello");
+}
+
+function transformArray<T, U>(
+    items: T[], 
+    transform: (item: T) => U, 
+    separator: string = ','
+  ): string {
+    return items.map(item => transform(item)).join(separator);
+}
