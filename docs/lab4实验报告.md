@@ -141,9 +141,141 @@ def if_statement(self, node, statements):
 ```
 
 
-### 
+### variable_declaration
+variable_declaration的解析为其他的使用提供了便捷，通过检查有无`accessibility_modifier`和`override_modifier`来为`class_declaration`提供编辑，此外，需要处理一个`var`通过逗号定义多个变量的情况，我们用for循环检测变量即可。我们还需要处理数组的初始化，特殊判断`value`是否为`subscript_expression`,对于初始化部分，用`has_init`表示是否进行初始化，进行初始化额外按照文档处理即可
+```py
+   def variable_declaration(self, node, statements):
+        # declaration
+        declarators = node.named_children
 
-### 
+        child = self.find_child_by_type(node,"accessibility_modifier")
+        attr=[]
+        if child:
+            attr.append(self.read_node_text(child))
+        child = self.find_child_by_type(node,"override_modifier")
+        if child:
+            attr.append(self.read_node_text(child))
+
+        for child in declarators:
+            has_init = False
+
+            data_type = self.find_child_by_field(child, "type")
+            shadow_type=""
+            if data_type:
+                named_cld = data_type.named_children
+                if named_cld:
+                    shadow_type = self.read_node_text(named_cld[0])
+
+            name = self.find_child_by_field(child, "name")
+            name = self.read_node_text(name)
+            value = self.find_child_by_field(child, "value")
+            if value:
+                has_init = True
+
+            if value and value.type == "subscript_expression":
+                tmp_var = self.parse_subscript(value,statements)
+
+                shadow_value = tmp_var
+            else:
+                shadow_value = self.parse(value, statements)
+
+            statements.append({"variable_decl": {"attr": attr, "data_type": shadow_type, "name": name}})
+            if has_init:
+                statements.append({"assign_stmt": {"target": name, "operand": shadow_value}})
+
+```
+
+### enum_declaration
+`enum_declaration`的实现可以参考下面部分`class_declaration`部分的实现，但typescript的enum要更为简单，只需要解析`name`和`body`部分即可，不用考虑类似java的复杂情况，对于`body`部分，我们参考`variable_declaration`的实现，单独处理变量和初始化
+```py
+    def enum_declaration(self, node, statements):
+        glang_node = {}
+        glang_node["attr"] = []
+        glang_node["init"] = []
+        glang_node["static_init"] = []
+        glang_node["fields"] = []
+        glang_node["member_methods"] = []
+        glang_node["enum_constants"] = []
+        glang_node["nested"] = []
+
+        child = self.find_child_by_field(node, "name")
+        glang_node["name"] = self.read_node_text(child)
+
+        glang_node["supers"] = []
+
+        child = self.find_child_by_field(node, "body")
+        self.enum_body(child, glang_node)
+
+        statements.append({"enum_decl": glang_node})
+
+    def enum_body(self, node, glang_node):
+        children = node.named_children
+        if children:
+            for child in children:
+                if child.type == "property_identifier":
+                    name = self.read_node_text(child)
+                    glang_node["fields"].append(
+                        {"variable_decl": {"data_type":"", "name":name}}
+                    )
+                else:
+                    name = self.find_child_by_field(child, "name")
+                    name = self.read_node_text(name)
+                    glang_node["fields"].append(
+                        {"variable_decl": {"data_type":"", "name":name}}
+                    )
+                    value = self.find_child_by_field(child, "value")
+                    if value:
+                        statements = []
+                        shadow_value = self.parse(value, statements)
+                        glang_node["init"].append(statements)
+                        glang_node["init"].append({"assign_stmt": {"target": name, "operand": shadow_value}})
+
+
+```
+
+### module_declaration
+直接解析`name`部分，由于中间语言没有这个declaration，我们按照之前的格式自己写了一个，对于body部分，参考stmt部分，使用列表来储存即可
+```py
+    def module_declaration(self,node,statements):
+        name = self.find_child_by_field(node, "name")
+        name = self.read_node_text(name)
+
+        new_body = []
+        child = self.find_child_by_field(node, "body")
+        if child:
+            for stmt in child.named_children:
+                if self.is_comment(stmt):
+                    continue
+
+                self.parse(stmt, new_body)
+        
+        statements.append(
+            {"module_decl": {"name": name, "body": new_body}})
+```
+
+### type_alias_declaration
+实现上先找到 `node` 的子节点，其字段名为 "name"，并读取该节点的文本，将其存储在 `name` 变量中。
+
+再找到 `node` 的子节点，其字段名为 "type_parameters"。如果这个子节点存在，那么读取该节点的文本，去掉首尾的字符（通常是括号或引号），并将结果存储在 `type_parameters` 变量中。
+
+然后找到 `node` 的子节点，其字段名为 "value"，并读取该节点的文本，将其存储在 `shadow_type` 变量中。
+
+最后将一个字典添加到 `statements` 列表中，这个字典包含了类型别名声明的所有信息，包括目标名称（`name`）、类型参数（`type_parameters`）和源类型（`shadow_type`）,返回即可。
+```py
+    def type_alias_declaration(self, node, statements):
+        child = self.find_child_by_field(node, "name")
+        name = self.read_node_text(child)
+
+        type_parameters = self.find_child_by_field(node, "type_parameters")
+        if type_parameters:
+            type_parameters = self.read_node_text(child)
+            type_parameters = type_parameters[1:-1]
+        
+        typ = self.find_child_by_field(node, "value")
+        shadow_type = self.read_node_text(typ)
+        
+        statements.append({"type_alias_stmt": {"target": name, "type": type_parameters, "source": [shadow_type]}})
+```
 
 ### class_declaration
 class_declaration集成了三种语法：`class_declaration`,`abstract_class_declaration` and `class`.
@@ -624,6 +756,11 @@ var sum = (x: number, y: number) => x + y;
 try {
     console.log(sum(3, 4));
 }
+const enum Enum {
+	C,
+    A = 1,
+    B = A * 2,
+}
 catch (e) {
     console.log(e);
 }
@@ -723,6 +860,15 @@ function transformArray<T, U>(
   ): string {
     return items.map(item => transform(item)).join(separator);
 }
+
+type MyNumber = number
+
+module Shapes {
+    export module Polygons {
+        export class Triangle { }
+        export class Square { }
+    }
+}
 ```
 
 ## 实验结果
@@ -777,6 +923,22 @@ function transformArray<T, U>(
                                                                           'args': ['"Finally '
                                                                                    'block"'],
                                                                           'data_type': ''}}]}}]}},
+{'enum_decl': {'attr': [],
+                'init': [[], {'assign_stmt': {'target': 'A', 'operand': '1'}},
+                         [{'assign_stmt': {'target': '%v0',
+                                           'operator': '*',
+                                           'operand': 'A',
+                                           'operand2': '2'}}],
+                         {'assign_stmt': {'target': 'B', 'operand': '%v0'}}],
+                'static_init': [],
+                'fields': [{'variable_decl': {'data_type': '', 'name': 'C'}},
+                           {'variable_decl': {'data_type': '', 'name': 'A'}},
+                           {'variable_decl': {'data_type': '', 'name': 'B'}}],
+                'member_methods': [],
+                'enum_constants': [],
+                'nested': [],
+                'name': 'Enum',
+                'supers': []}},
  {'new_instance': {'data_type': 'Error',
                    'args': ['"This is an error"'],
                    'target': '%v0'}},
@@ -1094,5 +1256,29 @@ function transformArray<T, U>(
                                           'name': '%v2',
                                           'args': ['separator'],
                                           'data_type': ''}},
-                           {'return_stmt': {'target': '@return'}}]}}]
+                           {'return_stmt': {'target': '@return'}}]}},
+    {'type_alias_stmt': {'target': 'MyNumber',
+                      'type': None,
+                      'source': ['number']}},
+    {'module_decl': {'name': 'Shapes',
+                  'body': [{'module_decl': {'name': 'Polygons',
+                                            'body': [{'class_decl': {'attr': ['class'],
+                                                                     'init': [],
+                                                                     'static_init': [],
+                                                                     'fields': [],
+                                                                     'member_methods': [],
+                                                                     'nested': [],
+                                                                     'name': 'Triangle',
+                                                                     'supers': []}},
+                                                     {'export_stmt': {'name': 'Triangle'}},
+                                                     {'class_decl': {'attr': ['class'],
+                                                                     'init': [],
+                                                                     'static_init': [],
+                                                                     'fields': [],
+                                                                     'member_methods': [],
+                                                                     'nested': [],
+                                                                     'name': 'Square',
+                                                                     'supers': []}},
+                                                     {'export_stmt': {'name': 'Square'}}]}},
+                           {'export_stmt': {'name': None}}]}}]
 ```
